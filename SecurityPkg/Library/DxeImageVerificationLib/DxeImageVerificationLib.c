@@ -1658,6 +1658,9 @@ DxeImageVerificationHandler (
   EFI_STATUS                           HashStatus;
   EFI_STATUS                           DbStatus;
   BOOLEAN                              IsFound;
+  UINT32                               AlignedLength;
+  UINT32                               Result;
+  EFI_STATUS                           AddStatus;
 
   SignatureList     = NULL;
   SignatureListSize = 0;
@@ -1667,6 +1670,7 @@ DxeImageVerificationHandler (
   Action            = EFI_IMAGE_EXECUTION_AUTH_UNTESTED;
   IsVerified        = FALSE;
   IsFound           = FALSE;
+  Result            = 0;
 
   //
   // Check the image type and get policy setting.
@@ -1850,9 +1854,9 @@ DxeImageVerificationHandler (
   // The first certificate starts at offset (SecDataDir->VirtualAddress) from the start of the file.
   //
   for (OffSet = SecDataDir->VirtualAddress;
-       OffSet < (SecDataDir->VirtualAddress + SecDataDir->Size);
-       OffSet += (WinCertificate->dwLength + ALIGN_SIZE (WinCertificate->dwLength))) {
+       (OffSet >= SecDataDir->VirtualAddress) && (OffSet < (SecDataDir->VirtualAddress + SecDataDir->Size));) {
     WinCertificate = (WIN_CERTIFICATE *) (mImageBase + OffSet);
+    AlignedLength = WinCertificate->dwLength + ALIGN_SIZE (WinCertificate->dwLength);
     if ((SecDataDir->VirtualAddress + SecDataDir->Size - OffSet) <= sizeof (WIN_CERTIFICATE) ||
         (SecDataDir->VirtualAddress + SecDataDir->Size - OffSet) < WinCertificate->dwLength) {
       break;
@@ -1881,7 +1885,7 @@ DxeImageVerificationHandler (
         break;
       }
       if (!CompareGuid (&WinCertUefiGuid->CertType, &gEfiCertPkcs7Guid)) {
-        continue;
+        goto NEXT_LOOP;
       }
       AuthData = WinCertUefiGuid->CertData;
       AuthDataSize = WinCertUefiGuid->Hdr.dwLength - OFFSET_OF(WIN_CERTIFICATE_UEFI_GUID, CertData);
@@ -1889,12 +1893,12 @@ DxeImageVerificationHandler (
       if (WinCertificate->dwLength < sizeof (WIN_CERTIFICATE)) {
         break;
       }
-      continue;
+      goto NEXT_LOOP;
     }
 
     HashStatus = HashPeImageByType (AuthData, AuthDataSize);
     if (EFI_ERROR (HashStatus)) {
-      continue;
+      goto NEXT_LOOP;
     }
 
     //
@@ -1946,6 +1950,13 @@ DxeImageVerificationHandler (
         DEBUG ((DEBUG_INFO, "DxeImageVerificationLib: Image is signed but signature is not allowed by DB and %s hash of image is not found in DB/DBX.\n", mHashTypeStr));
       }
     }
+
+NEXT_LOOP:
+    AddStatus = SafeUint32Add (OffSet, AlignedLength, &Result);
+    if (EFI_ERROR (AddStatus)) {
+      break;
+    }
+    OffSet = Result;
   }
 
   if (OffSet != (SecDataDir->VirtualAddress + SecDataDir->Size)) {
