@@ -53,6 +53,7 @@
   SecurityManagementLib
   PeCoffLib
   TpmMeasurementLib
+  SafeIntLib
 
 [Protocols]
   gEfiFirmwareVolume2ProtocolGuid       ## SOMETIMES_CONSUMES
